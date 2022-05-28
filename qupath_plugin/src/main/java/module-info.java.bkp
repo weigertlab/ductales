@@ -1,0 +1,8 @@
+module qupath.ductales {
+    requires java.base;
+    requires java.desktop;
+
+    requires qupath.gui.fx;
+
+	requires slf4j.api;
+}
