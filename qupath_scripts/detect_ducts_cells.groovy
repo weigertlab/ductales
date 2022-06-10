@@ -3,7 +3,7 @@ import qupath.ext.ductales.CellsDetector
 import qupath.lib.color.StainVector.DefaultStains
 import ij.process.AutoThresholder
 
-modelPath = "C:\\Users\\quentin.juppet\\Desktop\\Ductales\\models\\stardist with duct and species class.pb"
+modelPath = "C:\\Users\\quentin.juppet\\Desktop\\Ductales\\models\\stardist with duct and species class v4.pb"
 channel_indices = new int[]{0, 1, 2}
 classes = new String[]{"No Duct", "Duct - Mouse", "Duct - Human"}
 
@@ -16,7 +16,7 @@ print("Detecting duct regions...")
 
 ductRegions = new DuctRegionsFinder()
 	.deconvolutionStain(DefaultStains.EOSIN)
-	.downsample(4.0)
+	.downsample(8.0)
 	.gaussianSigma(2.0)
 	.thresholdMethod(AutoThresholder.Method.Default)
 	.minArea(100)
@@ -31,7 +31,7 @@ print("Detecting cells...")
 
 detectedCells = new CellsDetector(modelPath)
 	.threshold(0.5)
-	.normalizePercentiles(1, 99)
+	.normalize(true)
 	.tileSize(512)
 	.tileOverlap(64)
 	.channels(channel_indices)

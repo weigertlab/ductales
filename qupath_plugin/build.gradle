@@ -9,7 +9,7 @@ plugins {
 ext.moduleName = 'qupath.extension.ductales'
 archivesBaseName = 'qupath-extension-ductales'
 description = "QuPath extension that detect and characterize ducts from nuclei segmentation."
-version = "0.1.0"
+version = "0.1.1"
 
 repositories {
 //  mavenLocal()

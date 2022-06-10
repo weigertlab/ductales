@@ -73,7 +73,6 @@ public class ComputeDuctStructures implements Runnable {
 			return;
 		}
 
-		
 		var ductComputer = new DuctStructureComputer()
 				.excludeClasses((String[])parameterPane.getParameters().get("excludedClasses"))
 				.ductMaxDistance(ductMaxDistance)

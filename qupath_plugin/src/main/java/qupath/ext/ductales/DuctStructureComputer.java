@@ -20,6 +20,7 @@ import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryCollection;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Polygon;
+import org.locationtech.jts.operation.overlay.OverlayOp;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,6 +42,7 @@ import qupath.lib.objects.classes.PathClass;
 import qupath.lib.objects.classes.PathClassFactory;
 import qupath.lib.regions.ImagePlane;
 import qupath.lib.roi.GeometryTools;
+import qupath.lib.roi.PolygonROI;
 import qupath.lib.roi.ROIs;
 import qupath.lib.roi.RoiTools;
 
@@ -191,7 +193,7 @@ public class DuctStructureComputer {
 
 		@Override
 		public List<PathObject> getConnectedObjects(PathObject pathObject) {
-			return neighbors.get(pathObject);
+			return neighbors.getOrDefault(pathObject, new ArrayList<PathObject>());
 		}
 
 		@Override
@@ -222,12 +224,14 @@ public class DuctStructureComputer {
 			var ducts = clusters.stream().filter(clusterChildren->{
 				return clusterChildren.size() >= ductMinCellSize;
 			}).map(clusterChildren->{
-				var rois = clusterChildren.stream().map((child)->{
+				var geos = clusterChildren.stream().map((child)->{
 					var geo = child.getROI().getGeometry();
 					geo = geo.convexHull(); // Required to avoid error when union (two shells found sometimes)
-					return GeometryTools.geometryToROI(geo, ImagePlane.getDefaultPlane());
+					return geo;
 				}).collect(Collectors.toList());
-				var roi = RoiTools.union(rois);
+				var geo = GeometryTools.getDefaultFactory().buildGeometry(geos).buffer(0);
+				//var geo = GeometryTools.union(geos);
+				var roi = GeometryTools.geometryToROI(geo, ImagePlane.getDefaultPlane());
 				var annotation = PathObjects.createAnnotationObject(roi);
 				annotation.addPathObjects(clusterChildren);
 				return annotation;
@@ -239,11 +243,7 @@ public class DuctStructureComputer {
 
 			lock.lock();
 			try{
-				var maxDist = ductMaxDistance;
-				if(measure) {
-					maxDist = Math.max(maxDist, holesMinDistances[holesMinDistances.length-1]);						
-				}
-				currentConnexions = new DelaunayConnectionGroup(subdivision.getFilteredNeighbors(DelaunayTools.boundaryDistancePredicate(maxDist, true)));
+				currentConnexions = new DelaunayConnectionGroup(subdivision.getFilteredNeighbors(DelaunayTools.boundaryDistancePredicate(ductMaxDistance, true)));
 			}finally{
 				lock.unlock();
 			}
@@ -259,12 +259,7 @@ public class DuctStructureComputer {
 		lock.lock();
 		try {
 			return currentHoles.stream().map(hole-> {
-				var points = hole.cells.stream().map(cell->{
-					return getNucleusCentroid(cell);
-				}).collect(Collectors.toList());
-				var roi = ROIs.createPolygonROI(points, ImagePlane.getDefaultPlane());
-
-				var annotation = PathObjects.createAnnotationObject(roi);
+				var annotation = PathObjects.createAnnotationObject(hole.getROI());
 				annotation.setColorRGB(HOLES_COLOR);
 				return annotation;
 			}).collect(Collectors.toList());
@@ -276,13 +271,8 @@ public class DuctStructureComputer {
 	public Collection<PathObject> getPerimetersPathObjects() {
 		lock.lock();
 		try {
-			return currentPerimeters.stream().map(hole-> {
-				var points = hole.cells.stream().map(cell->{
-					return getNucleusCentroid(cell);
-				}).collect(Collectors.toList());
-				var roi = ROIs.createPolygonROI(points, ImagePlane.getDefaultPlane());
-
-				var annotation = PathObjects.createAnnotationObject(roi);
+			return currentPerimeters.stream().map(perim-> {
+				var annotation = PathObjects.createAnnotationObject(perim.getROI());
 				annotation.setColorRGB(PERIMETERS_COLOR);
 				return annotation;
 			}).collect(Collectors.toList());
@@ -310,12 +300,16 @@ public class DuctStructureComputer {
 		for(Double holesMinDistance : holesMinDistances)
 			boundariesNeighbors.add(subdivision.getFilteredNeighbors(DelaunayTools.boundaryDistancePredicate(holesMinDistance, true)));
 		var ductNeighbors = subdivision.getFilteredNeighbors(DelaunayTools.boundaryDistancePredicate(ductMaxDistance, true));
+		// Make sure we compute boundaries at maxDistance to have correct perimeter.
+		if(holesMinDistances[holesMinDistances.length-1] != ductMaxDistance)
+			boundariesNeighbors.add(ductNeighbors);
+		
 		ducts.parallelStream().forEach(d -> {
 			try {
 				ObjectMeasurements.addShapeMeasurements(d, image.getServer().getPixelCalibration());
 
 				var cellDensity = d.getChildObjects().size() / d.getROI().getArea();
-				d.getMeasurementList().addMeasurement("Cell density", cellDensity);
+				d.getMeasurementList().putMeasurement("Cell density", cellDensity);
 
 				for (PathClass pathClass : ductClasses) {
 					var nbCells = d.getChildObjects().stream().filter(c->{
@@ -323,7 +317,7 @@ public class DuctStructureComputer {
 					}).count();
 
 					var cellDensityPerClass = nbCells / d.getROI().getArea();
-					d.getMeasurementList().addMeasurement("Cell density - " + pathClass.getName(), cellDensityPerClass);
+					d.getMeasurementList().putMeasurement("Cell density - " + pathClass.getName(), cellDensityPerClass);
 				}
 
 				// Holes and perimeter
@@ -334,19 +328,37 @@ public class DuctStructureComputer {
 				var perimeters = boundaries.stream().filter(b-> {
 					return !b.isHole;
 				}).collect(Collectors.toList());
-				d.getMeasurementList().addMeasurement("Number of holes", holes.size());
+				
+				d.getMeasurementList().putMeasurement("Number of holes", holes.size());
+				
+				var holesArea = holes.stream().map(h -> h.getROI().getArea()).reduce(0., (a,b) -> a+b);
+				var perimetersArea = perimeters.stream().map(p -> p.getROI().getArea()).reduce(0., (a,b) -> a+b);
+				var solidity = perimeters.stream().map(p -> p.getROI().getSolidity()).reduce(0., (a,b) -> a+b) / perimeters.size();
+
+				d.getMeasurementList().putMeasurement("Porosity", holesArea / perimetersArea);
+				d.getMeasurementList().putMeasurement("Perimeter solidity", solidity);
 
 				computeCellDistanceToBoundaries(d.getChildObjects(), boundaries, ductNeighbors);
 
 				var numberInMonolayer = 0;
 				var meanDistanceToBorders = 0.0;
+				var numberInLayer0 = 0;
+				var numberInOtherLayers = 0;
 				for(PathObject cell : d.getChildObjects()) {
 					numberInMonolayer += cell.getMeasurementList().getMeasurementValue(IS_IN_MONOLAYER);
-					meanDistanceToBorders += cell.getMeasurementList().getMeasurementValue(DISTANCE_TO_BOUNDARIES);
+					var distToBoundaries = cell.getMeasurementList().getMeasurementValue(DISTANCE_TO_BOUNDARIES);
+					meanDistanceToBorders += distToBoundaries;
+					if(distToBoundaries == 0)
+						numberInLayer0 += 1;
+					else
+						numberInOtherLayers += 1;
 				}
 				meanDistanceToBorders /= d.getChildObjects().size();
-				d.getMeasurementList().addMeasurement("Number of monolayered cells", numberInMonolayer);
-				d.getMeasurementList().addMeasurement("Mean cell distance to borders", meanDistanceToBorders);
+				d.getMeasurementList().putMeasurement("Number of monolayered cells", numberInMonolayer);
+				d.getMeasurementList().putMeasurement("Mean cell distance to borders", meanDistanceToBorders);
+				d.getMeasurementList().putMeasurement("Number of cells (layer=0)", numberInLayer0);
+				d.getMeasurementList().putMeasurement("Number of cells (layer>0)", numberInOtherLayers);
+				
 
 				lock.lock();
 				try{
@@ -413,6 +425,13 @@ public class DuctStructureComputer {
 			}
 			coords[cells.size()] = coords[0];
 			polygon = new GeometryFactory().createPolygon(coords);
+		}
+		
+		public PolygonROI getROI() {
+			var points = cells.stream().map(cell -> {
+				return getNucleusCentroid(cell);
+			}).collect(Collectors.toList());
+			return ROIs.createPolygonROI(points, ImagePlane.getDefaultPlane());
 		}
 	}
 
@@ -503,7 +522,7 @@ public class DuctStructureComputer {
 					}
 				}
 
-				if(curBoundary.size() > 3 && (keepPerimeters || isHole))
+				if(curBoundary.size() > 3)
 					curBoundaries.add(new Boundary(curBoundary, isHole));
 			}
 
@@ -517,6 +536,18 @@ public class DuctStructureComputer {
 			curBoundaries = curBoundaries.stream().filter(boundary -> {
 				return boundary.cells.size() >= holesMinCellSize;
 			}).collect(Collectors.toList());
+			
+			curBoundaries.stream().forEach(boundary -> {
+				boundary.cells.stream().forEach(cell -> {
+					// Consider the cells detected at boundaries to be at distance 0
+					cell.getMeasurementList().putMeasurement(DISTANCE_TO_BOUNDARIES, 0);					
+				});
+			});
+			
+			if(!keepPerimeters)
+				curBoundaries = curBoundaries.stream().filter(boundary -> {
+					return boundary.isHole;
+				}).collect(Collectors.toList());
 			
 			curBoundaries = curBoundaries.stream().filter(boundary -> {
 				if(!boundary.isHole)
@@ -704,16 +735,17 @@ public class DuctStructureComputer {
 	private void computeCellDistanceToBoundaries(Collection<PathObject> ductCells, Collection<Boundary> boundaries, Map<PathObject, List<PathObject>> ductNeighbors) {
 		Map<PathObject, Integer> distanceToBoundaries = new HashMap<>();
 		Map<PathObject, Integer> numberConnectedBoundaries = new HashMap<>(); // None (-1), Hole (0), Perimeter (1), Both (2)
+		Queue<PathObject> cellQueue = new ArrayDeque<>();
 		for (PathObject cell : ductCells) {
-			distanceToBoundaries.put(cell, -1);
+			if(cell.getMeasurementList().containsNamedMeasurement(DISTANCE_TO_BOUNDARIES)){
+				distanceToBoundaries.put(cell, 0);
+				cellQueue.add(cell);
+			}else
+				distanceToBoundaries.put(cell, -1);
 			numberConnectedBoundaries.put(cell, 0);
 		}
-		Queue<PathObject> cellQueue = new ArrayDeque<>();
 		boundaries.stream().forEach(b ->{
 			b.cells.forEach(c->{
-				if(distanceToBoundaries.get(c) == -1)
-					cellQueue.add(c);
-				distanceToBoundaries.put(c, 0);
 				var nbConnectedBoundaries = numberConnectedBoundaries.get(c);
 				numberConnectedBoundaries.put(c, nbConnectedBoundaries + 1);
 			});
@@ -734,9 +766,9 @@ public class DuctStructureComputer {
 
 		for (PathObject cell : ductCells) {
 			var dist = distanceToBoundaries.get(cell);
-			cell.getMeasurementList().addMeasurement(DISTANCE_TO_BOUNDARIES, dist);
+			cell.getMeasurementList().putMeasurement(DISTANCE_TO_BOUNDARIES, dist);
 			var nbConnectedBoundaries = numberConnectedBoundaries.get(cell);
-			cell.getMeasurementList().addMeasurement(IS_IN_MONOLAYER, nbConnectedBoundaries >= 2 ? 1 : 0);
+			cell.getMeasurementList().putMeasurement(IS_IN_MONOLAYER, nbConnectedBoundaries >= 2 ? 1 : 0);
 		}
 	}
 

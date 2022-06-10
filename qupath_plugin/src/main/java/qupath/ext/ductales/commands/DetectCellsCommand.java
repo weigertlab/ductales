@@ -36,6 +36,7 @@ public class DetectCellsCommand implements Runnable {
 			parameterPane.addSeparator("StarDist parameters");
 			parameterPane.addFileSelector("modelPath", "Model file", "", "Model file", ".pb");
 			parameterPane.addDoubleTextField("threshold", "Threshold", DuctalesConstants.DEFAULT_STARDIST_THRESHOLD);
+			parameterPane.addCheckbox("normalizePercentile", "Normalize with percentile", false);
 			parameterPane.addDoubleTextField("normalizePercMin", "Normalize percentile min", DuctalesConstants.DEFAULT_STARDIST_NORMALIZE_PERCENTILE_MIN);
 			parameterPane.addDoubleTextField("normalizePercMax", "Normalize percentile max", DuctalesConstants.DEFAULT_STARDIST_NORMALIZE_PERCENTILE_MAX);
 			parameterPane.addIntegerTextField("tileSize", "Tile size", DuctalesConstants.DEFAULT_STARDIST_TILE_SIZE);
@@ -83,10 +84,16 @@ public class DetectCellsCommand implements Runnable {
 				return;
 			}
 		}
-
-		var detectedCells = new CellsDetector((String)parameterPane.getParameters().get("modelPath"))
-				.threshold((double)parameterPane.getParameters().get("threshold"))
-				.normalizePercentiles((double)parameterPane.getParameters().get("normalizePercMin"), (double)parameterPane.getParameters().get("normalizePercMax"))
+		
+		var detector = new CellsDetector((String)parameterPane.getParameters().get("modelPath"))
+				.threshold((double)parameterPane.getParameters().get("threshold"));
+		if((boolean)parameterPane.getParameters().get("normalizePercentile")) {
+			detector = detector.normalizePercentiles((double)parameterPane.getParameters().get("normalizePercMin"), (double)parameterPane.getParameters().get("normalizePercMax"));
+		}else {
+			detector = detector.normalize(true);
+		}
+		
+		var detectedCells = detector
 				.tileSize((int)parameterPane.getParameters().get("tileSize"))
 				.tileOverlap((int)parameterPane.getParameters().get("tileOverlap"))
 				.channels((int[])parameterPane.getParameters().get("channels"))

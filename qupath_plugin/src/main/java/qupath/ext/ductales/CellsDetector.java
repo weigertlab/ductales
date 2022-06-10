@@ -15,11 +15,18 @@ import qupath.lib.objects.PathObject;
 import qupath.lib.regions.ImagePlane;
 import qupath.lib.roi.ROIs;
 import qupath.lib.roi.interfaces.ROI;
+import qupath.opencv.ops.ImageOp;
+import qupath.opencv.ops.ImageOps;
+import qupath.opencv.ops.ImageOps.Normalize;
 
 public class CellsDetector {
 	private final static Logger logger = LoggerFactory.getLogger(CellsDetector.class);
 
 	private Object builder;
+	private boolean normalize = false;
+	private boolean normalizePercentiles = false;
+	private double normalizePercMin;
+	private double normalizePercMax;
 
 	public CellsDetector(String modelPath) {
 		try {
@@ -35,7 +42,7 @@ public class CellsDetector {
 
 		// Set default values
 		threshold(DuctalesConstants.DEFAULT_STARDIST_THRESHOLD);
-		normalizePercentiles(DuctalesConstants.DEFAULT_STARDIST_NORMALIZE_PERCENTILE_MIN, DuctalesConstants.DEFAULT_STARDIST_NORMALIZE_PERCENTILE_MAX);
+		normalize(true);
 		tileSize(DuctalesConstants.DEFAULT_STARDIST_TILE_SIZE);
 		tileOverlap(DuctalesConstants.DEFAULT_STARDIST_TILE_OVERLAP);
 		channels(DuctalesConstants.DEFAULT_STARDIST_CHANNELS);
@@ -54,10 +61,21 @@ public class CellsDetector {
 		}
 	}
 
+	public CellsDetector normalize(boolean normalize) {
+		try {
+			this.normalize = normalize;
+			return this;
+		} catch(Exception e) {
+			logger.error(e.getLocalizedMessage(), e);
+			throw new RuntimeException("Unable to run command: Detect cells", e);
+		}
+	}
+
 	public CellsDetector normalizePercentiles(double normalizePercMin, double normalizePercMax) {
 		try {
-			var normalizeMethod = builder.getClass().getMethod("normalizePercentiles", double.class, double.class);
-			builder = normalizeMethod.invoke(builder, normalizePercMin, normalizePercMax);			
+			normalizePercentiles = true;
+			this.normalizePercMin = normalizePercMin;
+			this.normalizePercMax = normalizePercMax;
 			return this;
 		} catch(Exception e) {
 			logger.error(e.getLocalizedMessage(), e);
@@ -127,6 +145,21 @@ public class CellsDetector {
 
 	public List<PathObject> detect(ImageData<BufferedImage> image, ROI detectionROI) {
 		try {
+			if(normalize) {
+				if(normalizePercentiles) {
+					var normalizeMethod = builder.getClass().getMethod("normalizePercentiles", double.class, double.class);
+					builder = normalizeMethod.invoke(builder, normalizePercMin, normalizePercMax);
+				} else {
+					var minVal = image.getServer().getPixelType().getLowerBound().doubleValue();
+					var maxVal = image.getServer().getPixelType().getUpperBound().doubleValue();
+					var addMethod = builder.getClass().getMethod("inputAdd", (new double[1]).getClass());
+					builder = addMethod.invoke(builder, new Object[] {new double[] {-minVal}});
+					var preprocessMethod = builder.getClass().getMethod("preprocess", (new ImageOp[1]).getClass());
+					var divideOps = ImageOps.Core.divide(maxVal - minVal);
+					builder = preprocessMethod.invoke(builder, new Object[] {new ImageOp[] {divideOps}});
+				}
+			}
+			
 			if(detectionROI == null) {
 				detectionROI = getFullImageROI(image.getServer());
 			}
