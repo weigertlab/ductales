@@ -13,3 +13,7 @@ The extension documentation is available [here](/documentation/Ductales_Document
 ## Scripts
 
 Some script to execute the extension pipeline in QuPath are available [here](/qupath_scripts).
+
+## Models
+
+Some classification models can be found [here](/models):
