@@ -23,7 +23,7 @@ ductRegions = new DuctRegionsFinder()
 	.dilatation(50)
 	.find(image)
 
-if(saveDuctRegions){
+if(showDuctRegions){
 	image.getHierarchy().addPathObject(ductRegions);
 }
 
