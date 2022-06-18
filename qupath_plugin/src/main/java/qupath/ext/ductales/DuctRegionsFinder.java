@@ -17,6 +17,7 @@ import qupath.lib.images.ImageData;
 import qupath.lib.images.servers.TransformedServerBuilder;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.PathObjects;
+import qupath.lib.objects.classes.PathClassFactory;
 import qupath.lib.regions.ImagePlane;
 import qupath.lib.regions.RegionRequest;
 import qupath.lib.roi.GeometryTools;
@@ -88,6 +89,7 @@ public class DuctRegionsFinder {
 			roi = RoiTools.fillHoles(roi);
 
 			var annotation = PathObjects.createAnnotationObject(roi);
+			annotation.setPathClass(PathClassFactory.getPathClass("Duct region estimation"));
 
 			return annotation;
 		} catch (Exception e) {

@@ -8,6 +8,7 @@ import java.util.Collection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import qupath.ext.ductales.utils.DuctalesConstants;
 import qupath.lib.analysis.features.HaralickFeatureComputer;
 import qupath.lib.analysis.features.ObjectMeasurements;
 import qupath.lib.analysis.features.ObjectMeasurements.Compartments;
@@ -27,41 +28,87 @@ import qupath.opencv.tools.OpenCVTools;
 
 public class CellsInfoExtractor {
 	private final static Logger logger = LoggerFactory.getLogger(CellsInfoExtractor.class);
+	private boolean measureShape;
+	private boolean measureIntensity;
+	private boolean measureTexture;
+
+
+	public CellsInfoExtractor() {
+		// Set default values
+		measureShape(DuctalesConstants.DEFAULT_CELL_MEASURE_SHAPE);
+		measureIntensity(DuctalesConstants.DEFAULT_CELL_MEASURE_INTENSITY);
+		measureTexture(DuctalesConstants.DEFAULT_CELL_MEASURE_TEXTURE);
+	}
+
+	public CellsInfoExtractor measureShape(boolean measureShape) {
+		try {
+			this.measureShape = measureShape;
+			return this;
+		} catch(Exception e) {
+			logger.error(e.getLocalizedMessage(), e);
+			throw new RuntimeException("Unable to run command: Measure cells infos", e);
+		}
+	}
+
+	public CellsInfoExtractor measureIntensity(boolean measureIntensity) {
+		try {
+			this.measureIntensity = measureIntensity;
+			return this;
+		} catch(Exception e) {
+			logger.error(e.getLocalizedMessage(), e);
+			throw new RuntimeException("Unable to run command: Measure cells infos", e);
+		}
+	}
+
+	public CellsInfoExtractor measureTexture(boolean measureTexture) {
+		try {
+			this.measureTexture = measureTexture;
+			return this;
+		} catch(Exception e) {
+			logger.error(e.getLocalizedMessage(), e);
+			throw new RuntimeException("Unable to run command: Measure cells infos", e);
+		}
+	}
+
 
 	public void extract(ImageData<BufferedImage> image, Collection<PathCellObject> cells) {
-		cells.parallelStream().forEach(c -> {
-			try {
-				ObjectMeasurements.addShapeMeasurements(c, image.getServer().getPixelCalibration());
-			} catch (Exception e) {
-				logger.error(e.getLocalizedMessage(), e);
-				throw new RuntimeException("Unable to run command: Measure cells infos", e);
-			}
-		});
-		var measurements = Arrays.asList(
-				Measurements.MAX,
-				Measurements.MEAN,
-				Measurements.MEDIAN,
-				Measurements.MIN,
-				Measurements.STD_DEV,
-				Measurements.VARIANCE
-				);
-		var compartments = Arrays.asList(
-				Compartments.NUCLEUS,
-				Compartments.CYTOPLASM
-				);
+		if(measureShape) {
+			cells.parallelStream().forEach(c -> {
+				try {
+					ObjectMeasurements.addShapeMeasurements(c, image.getServer().getPixelCalibration());
+				} catch (Exception e) {
+					logger.error(e.getLocalizedMessage(), e);
+					throw new RuntimeException("Unable to run command: Measure cells infos", e);
+				}
+			});
+		}
+		if(measureIntensity) {
+			var measurements = Arrays.asList(
+					Measurements.MAX,
+					Measurements.MEAN,
+					Measurements.MEDIAN,
+					Measurements.MIN,
+					Measurements.STD_DEV,
+					Measurements.VARIANCE
+					);
+			var compartments = Arrays.asList(
+					Compartments.NUCLEUS,
+					Compartments.CYTOPLASM
+					);
 
-		cells.parallelStream().forEach(c -> {
-			try {
-				ObjectMeasurements.addIntensityMeasurements(image.getServer(), c, 1, measurements, compartments);
-			} catch (IOException e) {
-				logger.error(e.getLocalizedMessage(), e);
-				throw new RuntimeException("Unable to run command: Measure cells infos", e);
-			}
-		});
-
-		computeHaralickFeatures(image.getServer(), cells, Compartments.NUCLEUS);
-		computeHaralickFeatures(image.getServer(), cells, Compartments.CYTOPLASM);
-
+			cells.parallelStream().forEach(c -> {
+				try {
+					ObjectMeasurements.addIntensityMeasurements(image.getServer(), c, 1, measurements, compartments);
+				} catch (IOException e) {
+					logger.error(e.getLocalizedMessage(), e);
+					throw new RuntimeException("Unable to run command: Measure cells infos", e);
+				}
+			});
+		}
+		if(measureTexture) {
+			computeHaralickFeatures(image.getServer(), cells, Compartments.NUCLEUS);
+			computeHaralickFeatures(image.getServer(), cells, Compartments.CYTOPLASM);
+		}
 	}
 
 	private void computeHaralickFeatures(ImageServer<BufferedImage> server, Collection<PathCellObject> cells, Compartments compartment) {

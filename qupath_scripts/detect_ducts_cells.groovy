@@ -9,6 +9,7 @@ classes = new String[]{"No Duct", "Duct - Mouse", "Duct - Human"}
 
 // Duct regions are an estimation to speed up cell detection
 showDuctRegions = true
+measureCellsFeatures = true
 
 image = getCurrentImageData()
 
@@ -40,3 +41,13 @@ detectedCells = new CellsDetector(modelPath)
 	.detect(image, ductRegions.getROI())
 
 image.getHierarchy().addPathObjects(detectedCells)
+
+if(measureCellsFeatures){
+	print("Measuring cells features...")
+
+	new CellsInfoExtractor()
+			.measureShape(true)
+			.measureIntensity(true)
+			.measureTexture(false)
+			.extract(image, cells);
+}

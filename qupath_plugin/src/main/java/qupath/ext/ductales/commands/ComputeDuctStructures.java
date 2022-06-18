@@ -88,13 +88,14 @@ public class ComputeDuctStructures implements Runnable {
 		curImage.getHierarchy().addPathObjects(ducts);
 
 		if((boolean)parameterPane.getParameters().get("showHoles")) {
-			var holes = ductComputer.getHolesPathObjects();
+			var holes = ductComputer.getHolesPathObjects(curImage);
 			curImage.getHierarchy().addPathObjects(holes);
 		}
 		if((boolean)parameterPane.getParameters().get("showPerimeters")) {
-			var perimeters = ductComputer.getPerimetersPathObjects();
+			var perimeters = ductComputer.getPerimetersPathObjects(curImage);
 			curImage.getHierarchy().addPathObjects(perimeters);
 		}
+		ductComputer.addParentRelations(ducts);
 		if((boolean)parameterPane.getParameters().get("showDelaunay")) {
 			ductComputer.showDelaunay(curImage);
 		}

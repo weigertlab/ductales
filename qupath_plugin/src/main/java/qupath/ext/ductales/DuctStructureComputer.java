@@ -16,6 +16,9 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
+import org.apache.commons.math3.linear.EigenDecomposition;
+import org.apache.commons.math3.linear.MatrixUtils;
+import org.apache.commons.math3.linear.RealVector;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryCollection;
 import org.locationtech.jts.geom.GeometryFactory;
@@ -58,15 +61,13 @@ public class DuctStructureComputer {
 	private boolean refineBoundaries;
 	private double triangleToRefineMinAngle;
 
-	private Collection<Boundary> currentHoles = new ArrayList<>();
-	private Collection<Boundary> currentPerimeters = new ArrayList<>();
+	private Collection<PathObject> currentHoles = new ArrayList<>();
+	private Collection<PathObject> currentPerimeters = new ArrayList<>();
 	private PathObjectConnectionGroup currentConnexions;
 	private Lock lock = new ReentrantLock();
 
 	private static final String DISTANCE_TO_BOUNDARIES = "Distance to boundaries";
 	private static final String IS_IN_MONOLAYER = "Is in monolayer";
-	private static final Integer HOLES_COLOR = ColorToolsAwt.getCachedColor(0, 0, 255).getRGB();
-	private static final Integer PERIMETERS_COLOR = ColorToolsAwt.getCachedColor(255, 128, 0).getRGB();
 
 	public DuctStructureComputer() {
 		// Set default values
@@ -237,6 +238,16 @@ public class DuctStructureComputer {
 				return annotation;
 			}).collect(Collectors.toList());
 
+			for(var i = 0; i < ducts.size(); ++i) {
+				var d = ducts.get(i);
+				d.getMeasurementList().putMeasurement("id", i);
+				d.setPathClass(PathClassFactory.getPathClass("Duct structure"));
+				var duct_id = i;
+				d.getChildObjects().stream().forEach(c->{
+					c.getMeasurementList().putMeasurement("parent id", duct_id);
+				});
+			}
+
 			if(measure) {
 				measureDuctInfos(image, ducts, subdivision);
 			}
@@ -255,27 +266,19 @@ public class DuctStructureComputer {
 		}
 	}
 
-	public Collection<PathObject> getHolesPathObjects() {
+	public Collection<PathObject> getHolesPathObjects(ImageData<BufferedImage> image) {
 		lock.lock();
 		try {
-			return currentHoles.stream().map(hole-> {
-				var annotation = PathObjects.createAnnotationObject(hole.getROI());
-				annotation.setColorRGB(HOLES_COLOR);
-				return annotation;
-			}).collect(Collectors.toList());
+			return currentHoles;
 		} finally {
 			lock.unlock();
 		}
 	}
 
-	public Collection<PathObject> getPerimetersPathObjects() {
+	public Collection<PathObject> getPerimetersPathObjects(ImageData<BufferedImage> image) {
 		lock.lock();
 		try {
-			return currentPerimeters.stream().map(perim-> {
-				var annotation = PathObjects.createAnnotationObject(perim.getROI());
-				annotation.setColorRGB(PERIMETERS_COLOR);
-				return annotation;
-			}).collect(Collectors.toList());
+			return currentPerimeters;
 		} finally {
 			lock.unlock();
 		}
@@ -303,21 +306,22 @@ public class DuctStructureComputer {
 		// Make sure we compute boundaries at maxDistance to have correct perimeter.
 		if(holesMinDistances[holesMinDistances.length-1] != ductMaxDistance)
 			boundariesNeighbors.add(ductNeighbors);
-		
+
 		ducts.parallelStream().forEach(d -> {
 			try {
 				ObjectMeasurements.addShapeMeasurements(d, image.getServer().getPixelCalibration());
 
-				var cellDensity = d.getChildObjects().size() / d.getROI().getArea();
-				d.getMeasurementList().putMeasurement("Cell density", cellDensity);
+				var area = d.getMeasurementList().getMeasurementValue("Area um^2");
+				var areaPerCell = area / d.getChildObjects().size();
+				d.getMeasurementList().putMeasurement("Area per cell um^2", areaPerCell);
 
 				for (PathClass pathClass : ductClasses) {
 					var nbCells = d.getChildObjects().stream().filter(c->{
 						return c.getPathClass() == pathClass;
 					}).count();
 
-					var cellDensityPerClass = nbCells / d.getROI().getArea();
-					d.getMeasurementList().putMeasurement("Cell density - " + pathClass.getName(), cellDensityPerClass);
+					var areaPerCellPerClass = area / nbCells;
+					d.getMeasurementList().putMeasurement("Area per cell um^2 - " + pathClass.getName(), areaPerCellPerClass);
 				}
 
 				// Holes and perimeter
@@ -325,18 +329,24 @@ public class DuctStructureComputer {
 				var holes = boundaries.stream().filter(b-> {
 					return b.isHole;
 				}).collect(Collectors.toList());
-				var perimeters = boundaries.stream().filter(b-> {
+				var perimeter = boundaries.stream().filter(b-> {
 					return !b.isHole;
-				}).collect(Collectors.toList());
-				
-				d.getMeasurementList().putMeasurement("Number of holes", holes.size());
-				
-				var holesArea = holes.stream().map(h -> h.getROI().getArea()).reduce(0., (a,b) -> a+b);
-				var perimetersArea = perimeters.stream().map(p -> p.getROI().getArea()).reduce(0., (a,b) -> a+b);
-				var solidity = perimeters.stream().map(p -> p.getROI().getSolidity()).reduce(0., (a,b) -> a+b) / perimeters.size();
+				}).findFirst().get();
 
-				d.getMeasurementList().putMeasurement("Porosity", holesArea / perimetersArea);
-				d.getMeasurementList().putMeasurement("Perimeter solidity", solidity);
+				d.getMeasurementList().putMeasurement("Number of holes", holes.size());
+
+				var holesArea = holes.stream().map(h -> h.getROI().getArea()).reduce(0., (a,b) -> a+b);
+				var perimeterArea = perimeter.getROI().getArea();
+				var perimeterSolidity = perimeter.getROI().getSolidity();
+
+				d.getMeasurementList().putMeasurement("Porosity", holesArea / perimeterArea);
+				d.getMeasurementList().putMeasurement("Perimeter area um^2", perimeterArea 
+						* image.getServer().getPixelCalibration().getPixelWidthMicrons()
+						* image.getServer().getPixelCalibration().getPixelHeightMicrons());
+				d.getMeasurementList().putMeasurement("Perimeter solidity", perimeterSolidity);
+
+				// var perimeterEllipse = fitEllipse(perimeter);
+				// d.getMeasurementList().putMeasurement("Perimeter elongation", 1 - perimeterEllipse.minAxis / perimeterEllipse.maxAxis);
 
 				computeCellDistanceToBoundaries(d.getChildObjects(), boundaries, ductNeighbors);
 
@@ -358,12 +368,21 @@ public class DuctStructureComputer {
 				d.getMeasurementList().putMeasurement("Mean cell distance to borders", meanDistanceToBorders);
 				d.getMeasurementList().putMeasurement("Number of cells (layer=0)", numberInLayer0);
 				d.getMeasurementList().putMeasurement("Number of cells (layer>0)", numberInOtherLayers);
-				
+
+
+				var duct_id = (int)d.getMeasurementList().getMeasurementValue("id");
+				holes.forEach(h->{
+					h.parent_id = duct_id;
+				});
+				perimeter.parent_id = duct_id;
+
+				var holesAnnot = holes.stream().map(h->h.toPathObject(image)).collect(Collectors.toList());
+				var perimAnnot = perimeter.toPathObject(image);
 
 				lock.lock();
 				try{
-					currentHoles.addAll(holes);
-					currentPerimeters.addAll(perimeters);
+					currentHoles.addAll(holesAnnot);
+					currentPerimeters.add(perimAnnot);
 				}finally{
 					lock.unlock();
 				}
@@ -373,6 +392,104 @@ public class DuctStructureComputer {
 			}
 		});
 	}
+	
+	public void addParentRelations(Collection<PathObject> ducts) {
+		ducts.forEach(d->{
+			var duct_id = (int)d.getMeasurementList().getMeasurementValue("id");
+			var holes = currentHoles.stream().filter(h->{
+				var parent_id = (int)h.getMeasurementList().getMeasurementValue("parent id");
+				return parent_id == duct_id;
+			}).collect(Collectors.toList());
+			var perimeters = currentPerimeters.stream().filter(p->{
+				var parent_id = (int)p.getMeasurementList().getMeasurementValue("parent id");
+				return parent_id == duct_id;
+			}).collect(Collectors.toList());
+	
+			d.addPathObjects(holes);
+			d.addPathObjects(perimeters);
+		});
+	}
+	
+	/*
+	class EllipseSize{
+		public double minAxis, maxAxis;
+
+		public EllipseSize(double minAxis, double maxAxis) {
+			this.minAxis = minAxis;
+			this.maxAxis = maxAxis;
+		}
+	}
+
+	private EllipseSize fitEllipse(Boundary polygon) {
+		// Based on Halir R., Flusser J.: Numerically Stable Direct Least Squares Fitting of Ellipses
+		var points = polygon.getNucleusPoints();
+
+		var D1Arr = new double[points.size()][3];
+		var D2Arr = new double[points.size()][3];
+
+		for(var i = 0; i < points.size(); ++i) {
+			var x = points.get(i).getX();
+			var y = points.get(i).getY();
+			D1Arr[i][0] = x*x;
+			D1Arr[i][1] = x*y;
+			D1Arr[i][2] = y*y;
+			D2Arr[i][0] = x;
+			D2Arr[i][1] = y;
+			D2Arr[i][2] = 1;
+		}
+
+		var D1 = MatrixUtils.createRealMatrix(D1Arr);
+		var D2 = MatrixUtils.createRealMatrix(D2Arr);
+
+		var S1 = D1.transpose().multiply(D1);
+		var S2 = D1.transpose().multiply(D2);
+		var S3 = D2.transpose().multiply(D2);
+
+		var T = MatrixUtils.inverse(S3).scalarMultiply(-1).multiply(S2.transpose());
+
+		double[][] C1arr = {{0, 0, 2}, {0, -1, 0}, {2, 0, 0}};
+		var C1 = MatrixUtils.createRealMatrix(C1arr);
+
+		var M = MatrixUtils.inverse(C1).multiply(S1.add(S2.multiply(T)));
+		var decomp = new EigenDecomposition(M);
+
+		RealVector a1 = null;
+		for(var i = 0; i < M.getRowDimension(); ++i) {
+			var vec = decomp.getEigenvector(i);
+			var imVal = decomp.getImagEigenvalue(i);
+			var reVal = decomp.getRealEigenvalue(i);
+			//var cond = 4 * vec.getEntry(0) * vec.getEntry(2) - vec.getEntry(1) * vec.getEntry(1);
+			if(reVal >= 0 && imVal == 0){
+				a1 = vec;
+				break;
+			}
+		}
+		if(a1 == null)
+			throw new RuntimeException("No valid eigenvector found.");
+
+		var a2 = T.operate(a1);
+
+		// Coefficient
+		var a = a1.getEntry(0);
+		var b = a1.getEntry(1) / 2;
+		var c = a1.getEntry(2);
+		var d = a2.getEntry(0) / 2;
+		var e = a2.getEntry(1) / 2;
+		var f = a2.getEntry(2);
+
+		var numerator = 2 * (a*e*e + c*d*d + f*b*b - 2*b*d*e - a*c*f);
+		var denominator1 = (b*b - a*c) * ( Math.sqrt((a-c)*(a-c) + 4*b*b) - (c+a));
+		var denominator2 = (b*b - a*c) * (-Math.sqrt((a-c)*(a-c) + 4*b*b) - (c+a));
+
+		var height = Math.sqrt(numerator / denominator1);
+		var width  = Math.sqrt(numerator / denominator2);
+
+		var minAxis = Math.min(width, height);
+		var maxAxis = Math.max(width, height);
+
+		return new EllipseSize(minAxis, maxAxis);
+	}
+	 */
 
 	class OrientedEdge{
 		public PathObject start;
@@ -414,6 +531,7 @@ public class DuctStructureComputer {
 		public List<PathObject> cells;
 		public boolean isHole;
 		public Polygon polygon;
+		public int parent_id;
 
 		public Boundary(List<PathObject> cells, boolean isHole) {
 			this.cells = cells;
@@ -426,12 +544,30 @@ public class DuctStructureComputer {
 			coords[cells.size()] = coords[0];
 			polygon = new GeometryFactory().createPolygon(coords);
 		}
-		
+
 		public PolygonROI getROI() {
 			var points = cells.stream().map(cell -> {
 				return getNucleusCentroid(cell);
 			}).collect(Collectors.toList());
 			return ROIs.createPolygonROI(points, ImagePlane.getDefaultPlane());
+		}
+
+		public List<Point2> getNucleusPoints(){
+			return cells.stream().map(cell -> {
+				return getNucleusCentroid(cell);
+			}).collect(Collectors.toList());
+		}
+
+		public PathObject toPathObject(ImageData<BufferedImage> image) {
+			var annotation = PathObjects.createAnnotationObject(this.getROI());
+			if(isHole) 
+				annotation.setPathClass(PathClassFactory.getPathClass("Hole"));
+			else 
+				annotation.setPathClass(PathClassFactory.getPathClass("Perimeter"));
+			
+			annotation.getMeasurementList().putMeasurement("parent id", parent_id);
+			ObjectMeasurements.addShapeMeasurements(annotation, image.getServer().getPixelCalibration());
+			return annotation;
 		}
 	}
 
@@ -504,9 +640,9 @@ public class DuctStructureComputer {
 						//If no right most edge, turn in other direction
 						rightMostEdge = edge.getOpposite();
 				}while(!startEdge.equals(rightMostEdge));
-				
+
 				var isHole = isPolygonClockwise(curBoundary);
-				
+
 				if(refineBoundaries) {
 					if(curBoundary.size() == 3 && isHole)
 					{
@@ -536,19 +672,19 @@ public class DuctStructureComputer {
 			curBoundaries = curBoundaries.stream().filter(boundary -> {
 				return boundary.cells.size() >= holesMinCellSize;
 			}).collect(Collectors.toList());
-			
+
 			curBoundaries.stream().forEach(boundary -> {
 				boundary.cells.stream().forEach(cell -> {
 					// Consider the cells detected at boundaries to be at distance 0
 					cell.getMeasurementList().putMeasurement(DISTANCE_TO_BOUNDARIES, 0);					
 				});
 			});
-			
+
 			if(!keepPerimeters)
 				curBoundaries = curBoundaries.stream().filter(boundary -> {
 					return boundary.isHole;
 				}).collect(Collectors.toList());
-			
+
 			curBoundaries = curBoundaries.stream().filter(boundary -> {
 				if(!boundary.isHole)
 					return true;
@@ -558,7 +694,7 @@ public class DuctStructureComputer {
 				});
 			}).collect(Collectors.toList());
 
-			
+
 			boundaries.addAll(curBoundaries);
 		}
 

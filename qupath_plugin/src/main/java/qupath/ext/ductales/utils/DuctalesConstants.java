@@ -15,6 +15,10 @@ public class DuctalesConstants {
 	public static double DEFAULT_FIND_DUCT_DILATATION = 50;
 	public static double DEFAULT_FIND_DUCT_GAUSSIAN_SIGMA = 2;
 	
+	public static boolean DEFAULT_CELL_MEASURE_SHAPE = true;
+	public static boolean DEFAULT_CELL_MEASURE_INTENSITY = true;
+	public static boolean DEFAULT_CELL_MEASURE_TEXTURE = true;
+
 	public static double DEFAULT_STARDIST_NORMALIZE_PERCENTILE_MIN = 1;
 	public static double DEFAULT_STARDIST_NORMALIZE_PERCENTILE_MAX = 99;
 	public static int DEFAULT_STARDIST_TILE_SIZE = 512;
@@ -30,8 +34,8 @@ public class DuctalesConstants {
 	public static double DEFAULT_DUCT_STRUCTURE_MAX_DISTANCE = 50;
 	public static int DEFAULT_DUCT_STRUCTURE_MIN_CELL_SIZE = 10;
 	public static boolean DEFAULT_DUCT_MEASURE = true;
-	public static double[] DEFAULT_DUCT_HOLES_MIN_DISTANCES = {20., 30., 50.};
-	public static int DEFAULT_DUCT_HOLES_MIN_CELL_SIZE = 8;
+	public static double[] DEFAULT_DUCT_HOLES_MIN_DISTANCES = {10., 20., 30., 50.};
+	public static int DEFAULT_DUCT_HOLES_MIN_CELL_SIZE = 5;
 	public static boolean DEFAULT_REFINE_BOUNDARIES = true;
 	public static double DEFAULT_TRIANGLE_TO_REFINE_MIN_ANGLE = 120;
 	public static boolean DEFAULT_SHOW_HOLES = false;

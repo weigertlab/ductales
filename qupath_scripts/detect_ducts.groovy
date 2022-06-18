@@ -15,6 +15,7 @@ ductClasses = new String[]{"Duct - Mouse", "Duct - Human"}
 showDuctRegions = true
 showHoles = true
 showPerimeters = true
+measureCellsFeatures = true
 
 image = getCurrentImageData()
 
@@ -47,6 +48,16 @@ cells = new CellsDetector(modelPath)
 
 image.getHierarchy().addPathObjects(cells)
 
+if(measureCellsFeatures){
+	print("Measuring cells features...")
+
+	new CellsInfoExtractor()
+			.measureShape(true)
+			.measureIntensity(true)
+			.measureTexture(false)
+			.extract(image, cells);
+}
+
 print("Computing ducts...")
 
 ductComputer = new DuctStructureComputer()
@@ -55,8 +66,8 @@ ductComputer = new DuctStructureComputer()
     .ductMinCellSize(10)
     .measure(true)
     .ductClasses(ductClasses)
-    .holesMinDistances(new double[]{20, 30, 50})
-    .holesMinCellSize(8)
+    .holesMinDistances(new double[]{10, 20, 30, 50})
+    .holesMinCellSize(5)
     .refineBoundaries(true)
     .triangleToRefineMinAngle(120)
 ducts = ductComputer.compute(image, cells)
@@ -64,10 +75,11 @@ ducts = ductComputer.compute(image, cells)
 image.getHierarchy().addPathObjects(ducts)
 
 if(showHoles) {
-    holes = ductComputer.getHolesPathObjects()
+    holes = ductComputer.getHolesPathObjects(image)
     image.getHierarchy().addPathObjects(holes)
 }
 if(showPerimeters) {
-    perimeters = ductComputer.getPerimetersPathObjects()
+    perimeters = ductComputer.getPerimetersPathObjects(image)
     image.getHierarchy().addPathObjects(perimeters)
 }
+ductComputer.addParentRelations(ducts)
