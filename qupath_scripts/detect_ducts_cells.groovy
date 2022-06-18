@@ -1,5 +1,6 @@
 import qupath.ext.ductales.DuctRegionsFinder
 import qupath.ext.ductales.CellsDetector
+import qupath.ext.ductales.CellsInfoExtractor
 import qupath.lib.color.StainVector.DefaultStains
 import ij.process.AutoThresholder
 
