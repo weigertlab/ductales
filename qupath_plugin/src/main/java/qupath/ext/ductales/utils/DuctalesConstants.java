@@ -8,9 +8,13 @@ public class DuctalesConstants {
 
 	public static String[] PIXEL_UNITS = {"px", "um"};
 
+	public static double DEFAULT_FIND_TISSUE_DOWNSAMPLE = 8;
+	public static int DEFAULT_FIND_TISSUE_CLOSE_SIZE = 30;
+	public static int DEFAULT_FIND_TISSUE_OPEN_SIZE = 15;
+
 	public static double DEFAULT_FIND_DUCT_DOWNSAMPLE = 8;
-	public static int DEFAULT_FIND_DUCT_DECONVOLUTION_STAIN_INDEX = DefaultStains.EOSIN.ordinal();
-	public static int DEFAULT_FIND_DUCT_THRESHOLDING_METHOD_INDEX = AutoThresholder.Method.Default.ordinal();
+	public static int DEFAULT_FIND_DUCT_DECONVOLUTION_STAIN_INDEX = 0;
+	public static int DEFAULT_FIND_DUCT_THRESHOLDING_METHOD_INDEX = AutoThresholder.Method.Triangle.ordinal();
 	public static int DEFAULT_FIND_DUCT_MIN_AREA = 100;
 	public static double DEFAULT_FIND_DUCT_DILATATION = 50;
 	public static double DEFAULT_FIND_DUCT_GAUSSIAN_SIGMA = 2;
@@ -41,4 +45,6 @@ public class DuctalesConstants {
 	public static boolean DEFAULT_SHOW_HOLES = false;
 	public static boolean DEFAULT_SHOW_PERIMETERS = false;
 	public static boolean DEFAULT_SHOW_DELAUNAY = false;
+	
+	public static DefaultStains[] H_E_STAINS = {DefaultStains.HEMATOXYLIN, DefaultStains.EOSIN};
 }

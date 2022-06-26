@@ -47,9 +47,9 @@ public class FindDuctRegionsCommand implements Runnable {
 	}
 
 	private String[] getDeconvolutionStains() {
-		var deconvolutionStains = new String[DefaultStains.values().length];
-		for(int i = 0; i < DefaultStains.values().length; ++i) {
-			deconvolutionStains[i] = DefaultStains.values()[i].toString();
+		var deconvolutionStains = new String[DuctalesConstants.H_E_STAINS.length];
+		for(int i = 0; i < DuctalesConstants.H_E_STAINS.length; ++i) {
+			deconvolutionStains[i] = DuctalesConstants.H_E_STAINS[i].toString();
 		}
 		return deconvolutionStains;
 	}

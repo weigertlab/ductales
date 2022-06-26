@@ -104,6 +104,21 @@ public class CellsInfoExtractor {
 					throw new RuntimeException("Unable to run command: Measure cells infos", e);
 				}
 			});
+			
+			var eosinStain = StainVector.makeDefaultStainVector(DefaultStains.EOSIN);
+			var hematoxylinStain = StainVector.makeDefaultStainVector(DefaultStains.HEMATOXYLIN);
+			
+			var colorDeconvolutionStains = new ColorDeconvolutionStains("Color deconv", hematoxylinStain, eosinStain, 255, 255, 255);
+			var deconvolvedServer = new TransformedServerBuilder(image.getServer()).deconvolveStains(colorDeconvolutionStains, 1, 2).build();
+
+			cells.parallelStream().forEach(c -> {
+				try {
+					ObjectMeasurements.addIntensityMeasurements(deconvolvedServer, c, 1, measurements, compartments);
+				} catch (IOException e) {
+					logger.error(e.getLocalizedMessage(), e);
+					throw new RuntimeException("Unable to run command: Measure cells infos", e);
+				}
+			});
 		}
 		if(measureTexture) {
 			computeHaralickFeatures(image.getServer(), cells, Compartments.NUCLEUS);
@@ -114,15 +129,18 @@ public class CellsInfoExtractor {
 	private void computeHaralickFeatures(ImageServer<BufferedImage> server, Collection<PathCellObject> cells, Compartments compartment) {
 		assert(compartment == Compartments.NUCLEUS || compartment == Compartments.CYTOPLASM);
 
-		DefaultStains stain;
-		if(compartment == Compartments.NUCLEUS)
-			stain = DefaultStains.HEMATOXYLIN; // Use hematoxylin to compute haralick features for cytoplasm
-		else
-			stain = DefaultStains.EOSIN; // Use eosin to compute haralick features for cytoplasm
+		var eosinStain = StainVector.makeDefaultStainVector(DefaultStains.EOSIN);
+		var hematoxylinStain = StainVector.makeDefaultStainVector(DefaultStains.HEMATOXYLIN);
+		
+		var colorDeconvolutionStains = new ColorDeconvolutionStains("Color deconv", hematoxylinStain, eosinStain, 255, 255, 255);
 
-		var deconvolutionStain = StainVector.makeDefaultStainVector(stain);
-		var colorDeconvolutionStains = new ColorDeconvolutionStains("Color deconv", deconvolutionStain, StainVector.createStainVector("Red", 1, 0, 0), 255, 255, 255);
-		var deconvolvedServer = new TransformedServerBuilder(server).deconvolveStains(colorDeconvolutionStains, 1).build();
+		ImageServer<BufferedImage> deconvolvedServer;
+		if(compartment == Compartments.NUCLEUS)
+			// Use hematoxylin to compute haralick features for cytoplasm
+			deconvolvedServer = new TransformedServerBuilder(server).deconvolveStains(colorDeconvolutionStains, 1).build();
+		else
+			// Use eosin to compute haralick features for cytoplasm
+			deconvolvedServer = new TransformedServerBuilder(server).deconvolveStains(colorDeconvolutionStains, 2).build();
 
 		cells.parallelStream().forEach(c -> {
 			try {

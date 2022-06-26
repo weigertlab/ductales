@@ -10,6 +10,7 @@ import ij.process.AutoThresholder;
 import qupath.ext.ductales.utils.DuctalesConstants;
 import qupath.imagej.processing.RoiLabeling;
 import qupath.imagej.tools.IJTools;
+import qupath.lib.analysis.features.ObjectMeasurements;
 import qupath.lib.color.ColorDeconvolutionStains;
 import qupath.lib.color.StainVector;
 import qupath.lib.color.StainVector.DefaultStains;
@@ -26,7 +27,7 @@ import qupath.lib.roi.RoiTools;
 public class DuctRegionsFinder {
 	private final static Logger logger = LoggerFactory.getLogger(DuctRegionsFinder.class);
 
-	private DefaultStains stainVector = DefaultStains.values()[DuctalesConstants.DEFAULT_FIND_DUCT_DECONVOLUTION_STAIN_INDEX];
+	private int stainVectorIndex = DuctalesConstants.DEFAULT_FIND_DUCT_DECONVOLUTION_STAIN_INDEX;
 	private double downsample = DuctalesConstants.DEFAULT_FIND_DUCT_DOWNSAMPLE;
 	private double gaussianSigma = DuctalesConstants.DEFAULT_FIND_DUCT_GAUSSIAN_SIGMA;
 	private AutoThresholder.Method thresholdMethod = AutoThresholder.Method.values()[DuctalesConstants.DEFAULT_FIND_DUCT_THRESHOLDING_METHOD_INDEX];
@@ -35,7 +36,18 @@ public class DuctRegionsFinder {
 
 
 	public DuctRegionsFinder deconvolutionStain(DefaultStains deconvolutionStain) {
-		this.stainVector = deconvolutionStain;
+		var foundResult = false;
+		for(var i = 0; i < DuctalesConstants.H_E_STAINS.length; ++i) {
+			if(DuctalesConstants.H_E_STAINS[i] == deconvolutionStain) {
+				stainVectorIndex = i;
+				foundResult = true;
+				break;
+			}
+		}
+		if(!foundResult) {
+			logger.error("Unable to run command: Find duct regions, invalid deconvolution stain");
+			throw new RuntimeException("Unable to run command: Find duct regions, invalid deconvolution stain");
+		}
 		return this;
 	}
 
@@ -66,9 +78,11 @@ public class DuctRegionsFinder {
 
 	public PathObject find(ImageData<BufferedImage> image) {
 		try {
-			var deconvolutionStain = StainVector.makeDefaultStainVector(stainVector);
-			var colorDeconvolutionStains = new ColorDeconvolutionStains("Color deconv", deconvolutionStain, StainVector.createStainVector("Red", 1, 0, 0), 255, 255, 255);
-			var deconvolvedServer = new TransformedServerBuilder(image.getServer()).deconvolveStains(colorDeconvolutionStains, 1).build();
+			var eosinStain = StainVector.makeDefaultStainVector(DefaultStains.EOSIN);
+			var hematoxylinStain = StainVector.makeDefaultStainVector(DefaultStains.HEMATOXYLIN);
+			
+			var colorDeconvolutionStains = new ColorDeconvolutionStains("Color deconv", hematoxylinStain, eosinStain, 255, 255, 255);
+			var deconvolvedServer = new TransformedServerBuilder(image.getServer()).deconvolveStains(colorDeconvolutionStains, stainVectorIndex+1).build();
 
 			var imp = IJTools.convertToImagePlus(deconvolvedServer, RegionRequest.createInstance(deconvolvedServer, downsample)).getImage();
 			new GaussianBlur().blurGaussian(imp.getProcessor(), gaussianSigma);
@@ -90,6 +104,7 @@ public class DuctRegionsFinder {
 
 			var annotation = PathObjects.createAnnotationObject(roi);
 			annotation.setPathClass(PathClassFactory.getPathClass("Duct region estimation"));
+			ObjectMeasurements.addShapeMeasurements(annotation, image.getServer().getPixelCalibration());
 
 			return annotation;
 		} catch (Exception e) {

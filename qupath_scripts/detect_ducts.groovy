@@ -1,3 +1,4 @@
+import qupath.ext.ductales.TissueFinder
 import qupath.ext.ductales.DuctRegionsFinder
 import qupath.ext.ductales.CellsDetector
 import qupath.ext.ductales.CellsInfoExtractor
@@ -13,6 +14,7 @@ excludedClasses = new String[]{"No Duct"}
 ductClasses = new String[]{"Duct - Mouse", "Duct - Human"}
 
 // Duct regions are an estimation to speed up cell detection
+showTissue = true
 showDuctRegions = true
 showHoles = true
 showPerimeters = true
@@ -20,13 +22,25 @@ measureCellsFeatures = true
 
 image = getCurrentImageData()
 
+if(showTissue){
+	print("Detecting tissue...")
+
+	tissue = new TissueFinder()
+		.downsample(8.0)
+		.closeSize(30)
+		.openSize(15)
+		.find(image)
+	
+	image.getHierarchy().addPathObject(ductRegions)
+}
+
 print("Detecting duct regions...")
 
 ductRegions = new DuctRegionsFinder()
-    .deconvolutionStain(DefaultStains.EOSIN)
+    .deconvolutionStain(DefaultStains.HEMATOXYLIN)
     .downsample(8.0)
     .gaussianSigma(2.0)
-    .thresholdMethod(AutoThresholder.Method.Default)
+    .thresholdMethod(AutoThresholder.Method.Triangle)
     .minArea(100)
     .dilatation(50)
     .find(image)
