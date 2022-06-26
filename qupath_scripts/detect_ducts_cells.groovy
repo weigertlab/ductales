@@ -25,7 +25,7 @@ if(showTissue){
 		.openSize(15)
 		.find(image)
 	
-	image.getHierarchy().addPathObject(ductRegions)
+	image.getHierarchy().addPathObject(tissue)
 }
 
 print("Detecting duct regions...")
